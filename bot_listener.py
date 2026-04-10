@@ -1,42 +1,53 @@
-import logging
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import gspread
-from google.oauth2.service_account import Credentials
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
+import pandas as pd
+import requests
+from io import BytesIO
 
-# --- SETTINGS ---
 TOKEN = "8631946181:AAG4XQshcQHY3HqgGTvjiXb_RmZtr34jTwE"
-# Replace with your Google Sheet Name
-SHEET_NAME = "Le Moon Database" 
-
-# NOTE: For the bot to work on your laptop with Google Sheets, 
-# you'll need a 'service_account.json' file from Google Cloud Console.
-# If this feels too complex, you can still manually type the ID in the app!
+# Your Google Sheet CSV Export Link (Simplest way to read for the bot)
+SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/gviz/tq?tqx=out:csv&sheet=customers"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    contact_button = KeyboardButton(text="ផ្ញើលេខទូរស័ព្ទរបស់ខ្ញុំ (Share Phone)", request_contact=True)
-    reply_markup = ReplyKeyboardMarkup([[contact_button]], one_time_keyboard=True, resize_keyboard=True)
+    # Main Menu Buttons
+    keyboard = [
+        [KeyboardButton("ផ្ញើលេខទូរស័ព្ទ (Link Account)", request_contact=True)],
+        [KeyboardButton("មើលបាកូដរបស់ខ្ញុំ (View QR Code)")]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
     await update.message.reply_text(
-        "សូមស្វាគមន៍មកកាន់ Le Moon Salon! ✨\nសូមចុចប៊ូតុងខាងក្រោមដើម្បីភ្ជាប់គណនីរបស់អ្នក។",
+        "សូមស្វាគមន៍មកកាន់ Le Moon Salon! ✨\nសូមជ្រើសរើសម៉ឺនុយខាងក្រោម៖",
         reply_markup=reply_markup
     )
 
-async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    contact = update.message.contact
-    phone = contact.phone_number.replace("+", "").replace("855", "0")[-9:] 
-    chat_id = update.message.chat_id
-
-    # Logic to update Google Sheets
+async def send_qr(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.message.chat_id)
+    
+    # 1. Read Google Sheet to find the Customer ID
     try:
-        # This part requires google-auth and gspread libraries
-        # It searches for the phone number in the 'customers' tab and adds the chat_id
-        await update.message.reply_text(f"អរគុណ! យើងបានភ្ជាប់លេខ {phone} ទៅកាន់ប្រព័ន្ធរួចរាល់។ ❤️")
+        df = pd.read_csv(SHEET_CSV_URL)
+        # Find row where telegram_id matches this user
+        user_row = df[df['telegram_id'].astype(str) == chat_id]
+        
+        if not user_row.empty:
+            customer_id = user_row.iloc[0]['id']
+            # 2. Send the QR code image
+            # Note: The image must be accessible or stored locally where the bot runs
+            qr_path = f"qrcodes/{customer_id}.png"
+            
+            with open(qr_path, 'rb') as photo:
+                await update.message.reply_photo(photo=photo, caption="នេះគឺជា QR Code សម្រាប់ប្រើប្រាស់នៅហាង។ ✨")
+        else:
+            await update.message.reply_text("សូមចុច 'Link Account' ជាមុនសិន ឬទាក់ទងមកហាងដើម្បីចុះឈ្មោះ។")
     except Exception as e:
-        await update.message.reply_text("មានបញ្ហាក្នុងការតភ្ជាប់។ សូមព្យាយាមម្តងទៀត។")
+        await update.message.reply_text("មានបញ្ហាបច្ចេកទេស។ សូមព្យាយាមម្តងទៀតក្រោយ!")
 
 if __name__ == "__main__":
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
-    print("Bot is listening...")
+    app.add_handler(MessageHandler(filters.CONTACT, start)) # Reuse start logic for link
+    app.add_handler(MessageHandler(filters.Text("មើលបាកូដរបស់ខ្ញុំ (View QR Code)"), send_qr))
+    
+    print("Bot is listening for QR requests...")
     app.run_polling()
