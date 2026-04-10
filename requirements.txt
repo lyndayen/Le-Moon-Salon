@@ -1,7 +1,0 @@
-streamlit
-pandas
-opencv-python-headless
-qrcode
-pillow
-requests
-python-telegram-bot
