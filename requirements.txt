@@ -5,6 +5,3 @@ opencv-python-headless
 qrcode
 pillow
 requests
-python-telegram-bot
-gspread
-oauth2client
